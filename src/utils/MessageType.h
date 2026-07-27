@@ -19,11 +19,12 @@
 
 namespace MsgType {
     enum Type : quint8 {
-        TEXT          = 0x00, // 普通文本消息（向后兼容旧版）
-        FILE_HEADER   = 0x01, // 文件元数据
-        FILE_CHUNK    = 0x02, // 文件数据块
-        FILE_END      = 0x03, // 文件传输结束
-        CONTROL       = 0xFF, // 控制消息（保留）
+        TEXT              = 0x00, // 普通文本消息（向后兼容旧版）
+        FILE_HEADER       = 0x01, // 文件元数据
+        FILE_CHUNK        = 0x02, // 文件数据块
+        FILE_TRANSFER_END = 0x03, // 文件传输结束
+        // 注意: 不可使用 FILE_END, 与 Windows SDK <winnt.h> 中的宏冲突
+        CONTROL           = 0xFF, // 控制消息（保留）
     };
 }
 

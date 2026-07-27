@@ -314,7 +314,7 @@ void IPv6ChatServer::processMessage(QTcpSocket* socket, QByteArray& buffer)
             if (firstByte == MsgType::TEXT ||
                 firstByte == MsgType::FILE_HEADER ||
                 firstByte == MsgType::FILE_CHUNK ||
-                firstByte == MsgType::FILE_END ||
+                firstByte == MsgType::FILE_TRANSFER_END ||
                 firstByte == MsgType::CONTROL) {
                 type = firstByte;
                 rest = fullMessage.mid(1);
@@ -375,7 +375,7 @@ void IPv6ChatServer::processMessage(QTcpSocket* socket, QByteArray& buffer)
                 }
                 break;
             }
-            case MsgType::FILE_END: {
+            case MsgType::FILE_TRANSFER_END: {
                 if (payload.size() >= MsgCodec::FILE_ID_LEN) {
                     emit fileEndArrived(clientID, payload.left(MsgCodec::FILE_ID_LEN));
                 }

@@ -375,7 +375,7 @@ void IPv6ChatClient::sendFileChunk(const QString& selfHost, const QString& clien
 void IPv6ChatClient::sendFileEnd(const QString& selfHost, const QString& clientID,
                                   const QByteArray& fileId) {
     QByteArray payload = MsgCodec::encodeFileEnd(fileId);
-    sendTypedFrame(selfHost, clientID, MsgType::FILE_END, payload);
+    sendTypedFrame(selfHost, clientID, MsgType::FILE_TRANSFER_END, payload);
 }
 
 // O17: Safety Number 支持访问器
