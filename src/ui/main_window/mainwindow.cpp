@@ -3,6 +3,8 @@
 #include "../../src/font-awesome/AwesomeGlobal.h"
 #include "../../utils/Requests.h"
 #include "../../utils/ProtocolUtils.h"
+#include "../../utils/SafetyNumber.h"
+#include "../../utils/KeyExchange.h"
 #include "../../encrypting/sodium/backends/SodiumCryptoBackend.h"
 
 #include <curl/curl.h>
@@ -13,6 +15,7 @@
 #include <QSettings>
 #include <QMetaObject>
 #include <QMessageBox>
+#include <QPushButton>
 #include <QFile>
 #include <QToolTip>
 #include <QTimer>
@@ -21,6 +24,11 @@
 #include <QButtonGroup>
 #include <QShortcut>
 #include <QKeySequence>
+#include <QMenu>
+#include <QAction>
+#include <QInputDialog>
+#include <QStandardPaths>
+#include <QDir>
 
 #include "../chat/delegates/ChatMessageDelegate.cpp"
 #include "../contacts/delegates/ContactsDelegate.cpp"
@@ -74,6 +82,20 @@ MainWindow::MainWindow(QWidget *parent)
 
     connect(ui->contacts_list_view, &QListView::clicked, this, &MainWindow::onContactClicked);
 
+    // O17: 联系人列表右键菜单 - 提供"显示 Safety Number"入口
+    ui->contacts_list_view->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(ui->contacts_list_view, &QWidget::customContextMenuRequested,
+            this, [this](const QPoint& pos){
+        QModelIndex index = ui->contacts_list_view->indexAt(pos);
+        if (!index.isValid()) return;
+
+        QMenu menu(this);
+        QAction* safetyAction = menu.addAction(tr("Show Safety Number..."));
+        safetyAction->setData(index);
+        connect(safetyAction, &QAction::triggered, this, &MainWindow::onShowSafetyNumberAction);
+        menu.exec(ui->contacts_list_view->viewport()->mapToGlobal(pos));
+    });
+
     QVector<Contact> contacts;
     currentContactModel->setContacts(contacts);
 
@@ -81,27 +103,44 @@ MainWindow::MainWindow(QWidget *parent)
     QButtonGroup* localeGroup = new QButtonGroup(this);
     localeGroup->addButton(ui->en_locale, 0);
     localeGroup->addButton(ui->ru_locale, 1);
-    localeGroup->addButton(ui->sindarin_locale, 2);
+    localeGroup->addButton(ui->zh_locale, 2);
 
     connect(localeGroup, &QButtonGroup::idClicked, this, [=, this](int id){
         switch (id) {
             case 0: switchLanguage("en"); break;
             case 1: switchLanguage("ru"); break;
-            case 2: switchLanguage("sindarin"); break;
+            case 2: switchLanguage("zh"); break;
         }
     });
 
     ui->en_locale->setIcon(QIcon(":/assets/images/en_flag.png"));
     ui->ru_locale->setIcon(QIcon(":/assets/images/ru_flag.png"));
-    ui->sindarin_locale->setIcon(QIcon(":/assets/images/sindarin.png"));
+    ui->zh_locale->setIcon(QIcon(":/assets/images/zh_flag.png"));
 
     QSize iconSize(32, 32);
     ui->en_locale->setIconSize(iconSize);
     ui->ru_locale->setIconSize(iconSize);
-    ui->sindarin_locale->setIconSize(iconSize);
+    ui->zh_locale->setIconSize(iconSize);
 
     // Initializing cryptography
     baseCrypto = std::make_shared<SodiumCryptoBackend>();
+
+    // O1: 初始化消息持久化层
+    // 数据库存放在用户配置目录下的 fantomchat 子目录
+    messageStore = std::make_unique<MessageStore>(this);
+    QString configDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    if (configDir.isEmpty()) {
+        // Linux/Windows 退回方案
+        configDir = QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) + "/fantomchat";
+    }
+    QDir().mkpath(configDir);
+    QString dbPath = configDir + "/messages.db";
+    if (messageStore->open(dbPath)) {
+        qDebug() << "MessageStore: opened at" << dbPath;
+    } else {
+        qWarning() << "MessageStore: failed to open" << dbPath << ", falling back to RAM-only mode";
+        messageStore->setEnabled(false);
+    }
 
     QIcon windowIcon(":/assets/images/logo.png");
     this->setWindowIcon(windowIcon);
@@ -330,6 +369,15 @@ void MainWindow::InitServer(int serverPort)
     connect(socketServer, &IPv6ChatServer::messageArrived, this, &MainWindow::onMessageArrived);
     connect(socketServer, &IPv6ChatServer::clientDisconnected, this, &MainWindow::onServerClientDisconnected);
     connect(socketServer, &IPv6ChatServer::clientConnected, this, &MainWindow::onServerClientConnected);
+    // O11: 加密/握手错误以本地化形式提示用户
+    connect(socketServer, &IPv6ChatServer::handshakeError, this, [this](const QString& msg){
+        QMessageBox::warning(this, tr("Handshake error"), msg);
+    });
+    connect(socketServer, &IPv6ChatServer::decryptionError, this, [this](const QString& msg){
+        qWarning() << "Server decryption error:" << msg;
+        // 解密错误一般为单条消息损坏，不打扰用户，仅在状态栏提示
+        // 这里以 warning 形式记录，可由 MainWindow 进一步加 status bar
+    });
 
     socketServer->cryptoBackend = baseCrypto->clone();
 
@@ -340,10 +388,28 @@ void MainWindow::InitServer(int serverPort)
         socketServer->run();
     }, Qt::QueuedConnection);
 
+    // O2: 同时启动 IPv6 多播 peer 自动发现
+    peerDiscovery = std::make_unique<PeerDiscovery>(this);
+    connect(peerDiscovery.get(), &PeerDiscovery::peerFound,
+            this, [](const QString& address, int port){
+        qDebug() << "Discovery: found peer" << address << ":" << port
+                 << "- use address to connect manually";
+    });
+    connect(peerDiscovery.get(), &PeerDiscovery::peerLost,
+            this, [](const QString& address, int port){
+        qDebug() << "Discovery: peer lost" << address << ":" << port;
+    });
+    if (!peerDiscovery->start(this->selfHostAddress, serverPort)) {
+        qWarning() << "Discovery: failed to start, only manual connection available";
+    }
+
     if (socketServerThread->isRunning()){
         ui->start_server_button->setDisabled(true);
         ui->port_input->setReadOnly(true);
     }
+
+    // O15: 启动后异步检测防火墙状态
+    startFirewallGuidance(serverPort);
 }
 
 void MainWindow::InitClient()
@@ -356,6 +422,10 @@ void MainWindow::InitClient()
         connect(socketClient, &IPv6ChatClient::peerConnected, this, &MainWindow::onPeerConnected);
         connect(socketClient, &IPv6ChatClient::peerDisconnected, this, &MainWindow::onPeerDisconnected);
         connect(socketClient, &IPv6ChatClient::messageSent, this, &MainWindow::onMessageSent);
+        // O11: 加密/握手错误以本地化形式提示用户
+        connect(socketClient, &IPv6ChatClient::handshakeError, this, [this](const QString& msg){
+            QMessageBox::warning(this, tr("Connection error"), msg);
+        });
     }, Qt::QueuedConnection);
 }
 
@@ -389,18 +459,8 @@ void MainWindow::switchLanguage(const QString &langCode)
         qApp->installTranslator(translator);
         ui->retranslateUi(this);
 
-        if (langCode == "sindarin") {
-            int fontID = QFontDatabase::addApplicationFont(":assets/fonts/tngan.ttf");
-            if (fontID != -1) {
-                QString family = QFontDatabase::applicationFontFamilies(fontID).at(0);
-                QFont tengwarFont(family);
-                qApp->setFont(tengwarFont);
-            } else {
-                qDebug() << "Unable load font";
-            }
-        } else {
-            qApp->setFont(QFont("Segoe UI, Roboto"));
-        }
+        // O10: 删除 Sindarin 后不再需要加载 Tengwar 字体，统一使用系统字体
+        qApp->setFont(QFont("Segoe UI, Roboto"));
 
         settings->setValue("language", langCode);
         settings->sync();
@@ -425,7 +485,8 @@ void MainWindow::applyStyleSheet(QString langCode)
     QString style = QString::fromUtf8(file.readAll());
     file.close();
 
-    QString fontName = (langCode == "sindarin") ? "\"Tengwar Annatar\"" : "\"Segoe UI\", \"Roboto\", sans-serif";
+    // O10: 删除 Sindarin 后统一使用系统默认字体
+    QString fontName = "\"Segoe UI\", \"Roboto\", sans-serif";
     style.replace("{{font}}", fontName);
 
     qApp->setStyleSheet(style);
@@ -475,6 +536,16 @@ void MainWindow::setUpMessagesForChatInRAM(const QString& chatID)
         messages[chatID] = QList<Message>();
     }
 
+    // O1: 若该 chat 尚未加载过，从持久化层加载历史消息
+    // 注意：messages[chatID] 一旦非空说明本会话已加载过，避免重复加载
+    if (messages[chatID].isEmpty() && messageStore && messageStore->isEnabled()) {
+        QList<Message> loaded = messageStore->loadMessages(chatID);
+        if (!loaded.isEmpty()) {
+            messages[chatID] = loaded;
+            qDebug() << "MessageStore: loaded" << loaded.size() << "messages for chat" << chatID;
+        }
+    }
+
     currentMessageModel = new MessageListModel(this);
     if (messages.contains(chatID))
         currentMessageModel->setMessages(messages[chatID]);
@@ -503,7 +574,13 @@ void MainWindow::onMessageSent(const QString& clientID, const QByteArray& messag
 {
     qDebug() << "Message sent: " << message << clientID;
     QString chatID = makeChatID(selfHostAddress.toString(), stripPort(clientID));
-    messages[chatID].append({clientID, QString::fromUtf8(message), false});
+    Message msg{clientID, QString::fromUtf8(message), false};
+    messages[chatID].append(msg);
+
+    // O1: 持久化到 SQLite（加密后写盘）
+    if (messageStore && messageStore->isEnabled()) {
+        messageStore->saveMessage(chatID, msg);
+    }
 
     currentContactModel->onNewMessage(chatID, clientID, message);
 
@@ -521,7 +598,13 @@ void MainWindow::onMessageArrived(const QString& clientID, const QByteArray& mes
 {
     qDebug() << "Message arrived: " << message << clientID;
     QString chatID = makeChatID(selfHostAddress.toString(), stripPort(clientID));
-    messages[chatID].append({clientID, QString::fromUtf8(message), true});
+    Message msg{clientID, QString::fromUtf8(message), true};
+    messages[chatID].append(msg);
+
+    // O1: 持久化到 SQLite（加密后写盘）
+    if (messageStore && messageStore->isEnabled()) {
+        messageStore->saveMessage(chatID, msg);
+    }
 
     currentContactModel->onNewMessage(chatID, clientID, message);
 
@@ -717,6 +800,119 @@ void MainWindow::onContactClicked(const QModelIndex& index)
     openChatPage(chatID, clientID);
 }
 
+// O17: 右键菜单触发，从触发它的 QAction 中拿到 index 然后显示 Safety Number
+void MainWindow::onShowSafetyNumberAction()
+{
+    QAction* action = qobject_cast<QAction*>(sender());
+    if (!action) return;
+    QModelIndex index = action->data().toModelIndex();
+    if (!index.isValid()) return;
+
+    QString clientID = index.data(ContactListModel::ClientIDRole).toString();
+    QString chatID = index.data(ContactListModel::ChatIDRole).toString();
+    showSafetyNumber(chatID, clientID);
+}
+
+// O17: 查找指定 clientID 的 peer 公钥
+// 客户端侧（用户主动连出去的连接）优先；找不到再查服务端侧（对端连入的连接）
+QByteArray MainWindow::lookupPeerPublicKey(const QString& clientID)
+{
+    if (socketClient) {
+        QByteArray pk = socketClient->peerPublicKey(clientID);
+        if (!pk.isEmpty()) return pk;
+    }
+    if (socketServer) {
+        return socketServer->peerPublicKey(clientID);
+    }
+    return {};
+}
+
+// O17: 查找本端公钥。优先服务端（被连接方）的临时密钥对
+QByteArray MainWindow::lookupLocalPublicKey()
+{
+    if (socketServer) {
+        QByteArray pk = socketServer->localPublicKey();
+        if (!pk.isEmpty()) return pk;
+    }
+    if (socketClient) {
+        return socketClient->localPublicKey();
+    }
+    return {};
+}
+
+// O17: 弹出对话框显示两端公钥派生的 Safety Number，并允许用户输入对端告知的 Safety Number 比对
+void MainWindow::showSafetyNumber(const QString& chatID, const QString& clientID)
+{
+    QByteArray localPK = lookupLocalPublicKey();
+    QByteArray remotePK = lookupPeerPublicKey(clientID);
+
+    if (localPK.isEmpty() || remotePK.isEmpty()) {
+        QMessageBox::information(this, tr("Safety Number"),
+            tr("Safety Number is not available yet.\n\n"
+               "Please establish an encrypted session with this peer first "
+               "(complete a handshake)."));
+        return;
+    }
+
+    QString sn = SafetyNumber::compute(localPK, remotePK);
+    if (sn.isEmpty()) {
+        QMessageBox::warning(this, tr("Safety Number"),
+            tr("Failed to compute Safety Number."));
+        return;
+    }
+
+    QString localFingerprint = KeyExchange::computeFingerprint(localPK);
+    QString remoteFingerprint = KeyExchange::computeFingerprint(remotePK);
+
+    QString details = QString(
+        "<b>%1</b><br>"
+        "<code style='font-size:14pt; letter-spacing:2px;'>%2</code>"
+        "<br><br>"
+        "<small>%3</small><br>"
+        "<code>%4</code><br><br>"
+        "<small>%5</small><br>"
+        "<code>%6</code>"
+    ).arg(tr("Your Safety Number with this peer is:"))
+     .arg(sn)
+     .arg(tr("Your key fingerprint:"))
+     .arg(localFingerprint)
+     .arg(tr("Peer key fingerprint:"))
+     .arg(remoteFingerprint);
+
+    QMessageBox box(this);
+    box.setWindowTitle(tr("Safety Number"));
+    box.setText(details);
+    box.setTextFormat(Qt::RichText);
+    box.setStandardButtons(QMessageBox::Ok);
+    box.setDefaultButton(QMessageBox::Ok);
+
+    // 加一个"验证"按钮，让用户输入对方告知的 SN 进行比对
+    QPushButton* verifyBtn = box.addButton(tr("Verify..."), QMessageBox::ActionRole);
+    box.exec();
+
+    if (box.clickedButton() == verifyBtn) {
+        bool ok = false;
+        QString userSn = QInputDialog::getText(
+            this, tr("Verify Safety Number"),
+            tr("Enter the Safety Number as read out by the peer:"),
+            QLineEdit::Normal, QString(), &ok);
+        if (ok && !userSn.isEmpty()) {
+            if (SafetyNumber::equals(userSn, sn)) {
+                QMessageBox::information(this, tr("Verify Safety Number"),
+                    tr("✅ Safety Numbers match.\n"
+                       "Your communication is end-to-end encrypted and not "
+                       "intercepted by a third party."));
+            } else {
+                QMessageBox::warning(this, tr("Verify Safety Number"),
+                    tr("⚠️ Safety Numbers do NOT match.\n"
+                       "Your communication may be intercepted.\n"
+                       "Please verify the channel you used to exchange "
+                       "Safety Numbers is trustworthy."));
+            }
+        }
+    }
+}
+
 void MainWindow::showToolTipOnPosition(QWidget* widget, QString text)
 {
     QPoint globalPos = widget->mapToGlobal(QPoint(widget->width() / 2, 0));
@@ -726,3 +922,128 @@ void MainWindow::showToolTipOnPosition(QWidget* widget, QString text)
         QToolTip::hideText();
     });
 }
+
+// O15: 防火墙引导
+// 在服务端启动后异步检测防火墙状态，若发现防火墙启用且端口不可达，
+// 弹出友好对话框提示用户一键添加防火墙规则。
+void MainWindow::startFirewallGuidance(int serverPort)
+{
+    if (!firewallHelper) {
+        firewallHelper = new FirewallHelper(this);
+        connect(firewallHelper, &FirewallHelper::detectionFinished,
+                this, &MainWindow::onFirewallDetectionFinished,
+                Qt::QueuedConnection);
+    }
+    firewallHelper->detectAsync(serverPort);
+}
+
+void MainWindow::onFirewallDetectionFinished(FirewallHelper::Platform platform,
+                                              FirewallHelper::FirewallState state,
+                                              FirewallHelper::PortCheckResult portResult,
+                                              int serverPort)
+{
+    QString platformName;
+    switch (platform) {
+        case FirewallHelper::Platform::Windows:        platformName = "Windows"; break;
+        case FirewallHelper::Platform::Linux_Ufw:      platformName = "Linux (UFW)"; break;
+        case FirewallHelper::Platform::Linux_Firewalld:platformName = "Linux (firewalld)"; break;
+        case FirewallHelper::Platform::Linux_NotManaged:platformName = "Linux (unmanaged firewall)"; break;
+        case FirewallHelper::Platform::MacOs:          platformName = "macOS"; break;
+        default:                                       platformName = "Unknown"; break;
+    }
+
+    qDebug() << "FirewallHelper: platform=" << platformName
+             << " state=" << static_cast<int>(state)
+             << " portReachable=" << portResult.locallyReachable
+             << " detail=" << portResult.detail;
+
+    // 端口本身可达，无需任何提示
+    if (portResult.locallyReachable && state != FirewallHelper::FirewallState::Enabled) {
+        qDebug() << "FirewallHelper: port reachable, no guidance needed";
+        return;
+    }
+
+    // 防火墙关闭或端口可达：不弹窗
+    if (state == FirewallHelper::FirewallState::Disabled ||
+        state == FirewallHelper::FirewallState::Unknown) {
+        if (portResult.locallyReachable) {
+            return;
+        }
+    }
+
+    // 端口不可达 OR 防火墙启用：弹出引导
+    QString title = tr("Firewall Configuration Required");
+    QString body;
+    QString addBtnText;
+
+    if (state == FirewallHelper::FirewallState::Enabled && !portResult.locallyReachable) {
+        body = tr(
+            "Your system firewall (%1) appears to be enabled and the server port %2 "
+            "could not be bound locally.<br><br>"
+            "Would you like to add an inbound firewall rule for TCP port %2? "
+            "This typically requires administrator privileges."
+        ).arg(platformName).arg(serverPort);
+        addBtnText = tr("Add firewall rule");
+    } else if (state == FirewallHelper::FirewallState::Enabled) {
+        body = tr(
+            "Your system firewall (%1) is enabled. Fantom-Chat may need an inbound "
+            "rule for TCP port %2 to accept incoming peer connections.<br><br>"
+            "Would you like to add the rule now? This typically requires administrator privileges."
+        ).arg(platformName).arg(serverPort);
+        addBtnText = tr("Add firewall rule");
+    } else if (state == FirewallHelper::FirewallState::NotManaged) {
+        body = tr(
+            "Your system appears to use an unmanaged firewall (e.g. raw iptables/nftables). "
+            "Fantom-Chat cannot add rules automatically.<br><br>"
+            "Please manually allow inbound TCP port %1 for IPv6 traffic."
+        ).arg(serverPort);
+        addBtnText = tr("OK");
+    } else if (!portResult.locallyReachable) {
+        body = tr(
+            "Server port %1 could not be bound locally: %2.<br><br>"
+            "Please check whether another process is using this port, "
+            "or pick a different port in the range 30000-65535."
+        ).arg(serverPort).arg(portResult.detail);
+        addBtnText = tr("OK");
+    } else {
+        return;
+    }
+
+    QMessageBox box(this);
+    box.setWindowTitle(title);
+    box.setTextFormat(Qt::RichText);
+    box.setText(body);
+    box.setIcon(QMessageBox::Warning);
+
+    QPushButton* addBtn = nullptr;
+    box.addButton(tr("Skip"), QMessageBox::RejectRole);
+    addBtn = box.addButton(addBtnText, QMessageBox::AcceptRole);
+    box.setDefaultButton(addBtn);
+    box.exec();
+
+    if (box.clickedButton() == addBtn &&
+        (state == FirewallHelper::FirewallState::Enabled ||
+         state == FirewallHelper::FirewallState::NotManaged)) {
+        // 仅在防火墙启用且本工具可管理时尝试自动添加
+        if (state == FirewallHelper::FirewallState::Enabled) {
+            QString ruleName = QString("FantomChat TCP %1").arg(serverPort);
+            bool dispatched = firewallHelper->requestAddRule(serverPort, ruleName);
+            if (dispatched) {
+                QMessageBox::information(this, tr("Firewall"),
+                    tr("Firewall rule request has been dispatched. "
+                       "If a privilege elevation prompt appears, please approve it. "
+                       "After adding the rule, you may need to restart the server."));
+            } else {
+                QMessageBox::warning(this, tr("Firewall"),
+                    tr("Failed to dispatch firewall rule request. "
+                       "Please add the rule manually:<br>"
+                       "Windows: <code>netsh advfirewall firewall add rule name=\"FantomChat\" "
+                       "dir=in action=allow protocol=TCP localport=%1</code><br>"
+                       "Linux (ufw): <code>sudo ufw allow %1/tcp</code><br>"
+                       "Linux (firewalld): <code>sudo firewall-cmd --add-port=%1/tcp --permanent</code>")
+                    .arg(serverPort));
+            }
+        }
+    }
+}
+

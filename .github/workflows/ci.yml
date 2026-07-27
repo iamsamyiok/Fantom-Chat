@@ -1,0 +1,128 @@
+# O13 + F4: GitHub Actions CI
+# 多平台构建 + 单元测试，每次 push / PR 都会触发
+# O14: 增加 Linux ARM64 原生构建（树莓派 / ARM 服务器）
+#       macOS-latest 已是 Apple Silicon 原生 arm64，无需额外作业
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  build-and-test:
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04, ubuntu-24.04-arm, windows-latest, macos-latest]
+        include:
+          - os: ubuntu-22.04
+            qt-bin: qt6-base-dev
+            artifact-suffix: linux-22.04
+          - os: ubuntu-24.04
+            qt-bin: qt6-base-dev
+            artifact-suffix: linux-24.04
+          - os: ubuntu-24.04-arm
+            qt-bin: qt6-base-dev
+            artifact-suffix: linux-24.04-arm64
+          - os: windows-latest
+            qt-bin: ''
+            artifact-suffix: windows
+          - os: macos-latest
+            qt-bin: ''
+            artifact-suffix: macos
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ---- Linux deps ----
+      - name: Install deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            qt6-base-dev \
+            qt6-l10n-tools \
+            libsodium-dev \
+            libcurl4-openssl-dev \
+            zlib1g-dev \
+            libgl1-mesa-dev
+
+      # ---- macOS deps ----
+      - name: Install deps (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install qt@6 libsodium curl zlib
+          echo "/opt/homebrew/opt/qt@6/bin" >> $GITHUB_PATH
+
+      # ---- Windows deps (MSYS2) ----
+      - name: Install deps (Windows)
+        if: runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            mingw-w64-ucrt-x86_64-qt6-base
+            mingw-w64-ucrt-x86_64-libsodium
+            mingw-w64-ucrt-x86_64-curl
+            mingw-w64-ucrt-x86_64-zlib
+
+      # ---- Build (Unix) ----
+      - name: Build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p build
+          cd build
+          qmake6 ../ipv6chat.pro
+          make -j4
+
+      # ---- Build (Windows via MSYS2) ----
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          mkdir -p build
+          cd build
+          qmake6.exe ../ipv6chat.pro
+          mingw32-make -j4
+
+      # ---- Unit tests (Linux only - 测试代码当前依赖 Unix 工具链) ----
+      - name: Build & Run Unit Tests
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p tests/build
+          cd tests/build
+          qmake6 ../tests.pro
+          make -j4
+          ./FantomChatTests
+
+      # ---- 上传构建产物 ----
+      - name: Upload artifact (Linux)
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FantomChat-${{ matrix.artifact-suffix }}
+          path: build/FantomChat
+          if-no-files-found: error
+
+      - name: Upload artifact (Windows)
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FantomChat-${{ matrix.artifact-suffix }}
+          path: build/FantomChat.exe
+          if-no-files-found: error
+
+      - name: Upload artifact (macOS)
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v4
+        with:
+          name: FantomChat-${{ matrix.artifact-suffix }}
+          path: build/FantomChat.app
+          if-no-files-found: error

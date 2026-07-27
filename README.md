@@ -1,10 +1,18 @@
 # 📦 Fantom Chat - P2P IPv6 Chat
+
 ![License](https://img.shields.io/badge/license-Fair%20Source%20v1.0-blue)
 ![Platform](https://img.shields.io/badge/platform-win64%20%7C%20osx%20%7C%20linux-lightgrey)
 ![Qt](https://img.shields.io/badge/qt-6.9%2B-success)
+[![CI](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/actions/workflows/ci.yml/badge.svg)](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/actions/workflows/ci.yml)
+[![Discussions](https://img.shields.io/badge/💬%20Discussions-join%20us-7289da?logo=github)](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/discussions)
+[![Contributing](https://img.shields.io/badge/🤝%20Contributing-PRs%20welcome-brightgreen)](CONTRIBUTING.md)
+[![Feedback](https://img.shields.io/badge/📣%20User%20Feedback-welcome-ff69b4)](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/discussions/new?category=feedback)
 
 **Fantom Chat - P2P IPv6 Chat** is a lightweight peer-to-peer and client-server messenger focused on privacy, autonomy, and security.  
 Built in C++ using Qt.
+
+> 📣 **We'd love to hear from you!** Tap the **User Feedback** badge above to share ideas, report issues,
+> or just say hi. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to file a good Issue or PR.
 
 ---
 
@@ -84,6 +92,13 @@ Let us make world the better place than we found it.
 ## 🤝 Contribute
 
 Pull requests and feedback are welcome!  
-Feel free to open an issue for bugs, ideas, or suggestions.
+Please read the [贡献指南](CONTRIBUTING.md) before opening an Issue or PR —
+it covers Issue / Discussion / PR 流程、构建步骤、代码风格、协议兼容约定等内容。
 
-Or reach out: [emilerofeevskij@gmail.com](mailto:emilerofeevskij@gmail.com)
+| 想做的事 | 去哪里 |
+|----------|--------|
+| 报告 Bug | [Issue · Bug Report](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/issues/new?assignees=&labels=bug%2Ctriage&template=bug_report.md) |
+| 提议功能 | [Issue · Feature Request](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/issues/new?assignees=&labels=enhancement%2Ctriage&template=feature_request.md) |
+| 使用疑问 / 讨论 | [GitHub Discussions](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/discussions) |
+| 安全漏洞 | [Security Advisory](https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/security/advisories/new) |
+| 直接邮件 | [emilerofeevskij@gmail.com](mailto:emilerofeevskij@gmail.com) |

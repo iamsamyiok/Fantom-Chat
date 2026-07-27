@@ -1,0 +1,22 @@
+# Issue 模板配置
+# 参考文档：https://docs.github.com/communities/using-templates-to-encourage-useful-issues-and-pull-requests/configuring-issue-templates-for-your-repository
+
+# 关闭"空白 Issue"入口，所有 Issue 都必须从模板发起，
+# 以确保包含必要的诊断信息（版本、OS、复现步骤等）。
+blank_issues_enabled: false
+
+# 引导"使用问题/求助/讨论"类内容到 Discussions 区，
+# 让 Issue 区专注于"可执行"的 bug 与 feature。
+contact_links:
+  - name: 💬 Discussions（使用问题 / 想法 / 求助）
+    url: https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/discussions
+    about: |
+      使用疑问、想法、求助请发到 Discussions 区。
+      Issue 区仅受理「可复现 Bug」与「具体 Feature Request」。
+  - name: 📖 优化建议文档
+    url: https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/blob/main/Fantom-Chat-优化建议文档.md
+    about: 阅读项目完整优化建议文档，了解路线图与设计权衡。
+  - name: 🔒 安全漏洞披露
+    url: https://github.com/Emilianissimo/Fantom-Chat-P2P-IPv6-Chat/security/policy
+    about: |
+      安全漏洞请勿公开 Issue，请走 GitHub Security Advisory 流程。

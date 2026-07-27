@@ -19,7 +19,8 @@ QByteArray SodiumSession::encrypt(const QByteArray& plainText) const
             reinterpret_cast<const unsigned char*>(nonce.constData()),
             reinterpret_cast<const unsigned char*>(m_txKey.constData())) != 0
         ){
-        throw SodiumCryptoError("Encryption failed");
+        throw SodiumCryptoError("Encryption failed",
+                                CryptoErrorCode::EncryptionFailed);
     }
 
     return nonce + cipherText;
@@ -28,7 +29,8 @@ QByteArray SodiumSession::encrypt(const QByteArray& plainText) const
 QByteArray SodiumSession::decrypt(const QByteArray& cipherText) const
 {
     if (cipherText.size() < crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) {
-        throw SodiumCryptoError("Ciphertext too short to cointain nonce and MAC");
+        throw SodiumCryptoError("Ciphertext too short to cointain nonce and MAC",
+                                CryptoErrorCode::CiphertextTooShort);
     }
 
 
@@ -42,7 +44,8 @@ QByteArray SodiumSession::decrypt(const QByteArray& cipherText) const
             reinterpret_cast<const unsigned char*>(encrypted.constData()), encrypted.size(),
             reinterpret_cast<const unsigned char*>(nonce.constData()),
             reinterpret_cast<const unsigned char*>(m_rxKey.constData())) != 0) {
-        throw SodiumCryptoError("Decryption failed: MAC check failed");
+        throw SodiumCryptoError("Decryption failed: MAC check failed",
+                                CryptoErrorCode::DecryptionMacFailed);
     }
 
     return plainText;

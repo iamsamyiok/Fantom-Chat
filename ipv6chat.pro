@@ -1,4 +1,4 @@
-QT += core widgets network
+QT += core widgets network sql
 
 TARGET = FantomChat
 TEMPLATE = app
@@ -9,19 +9,30 @@ SOURCES += \
     src/encrypting/sodium/backends/SodiumCryptoBackend.cpp \
     src/encrypting/sodium/key_pairs/SodiumKeyPair.cpp \
     src/encrypting/sodium/sessions/SodiumSession.cpp \
+    src/encrypting/sodium/sessions/SodiumRatchetSession.cpp \
     src/models/ContactListModel.cpp \
     src/network/IPv6ChatClient.cpp \
     src/network/IPv6ChatServer.cpp \
+    src/network/PeerDiscovery.cpp \
     src/models/MessageListModel.cpp \
     src/ui/contacts/delegates/ContactsDelegate.cpp \
+    src/utils/ClockSync.cpp \
+    src/storage/MessageStore.cpp \
     src/utils/Requests.cpp \
+    src/utils/FirewallHelper.cpp \
+    src/utils/KeyExchange.cpp \
+    src/utils/SafetyNumber.cpp \
+    src/protocol/Frame.cpp \
+    src/protocol/FrameReader.cpp \
+    src/protocol/HandshakeCodec.cpp \
     main.cpp \
     src/ui/main_window/mainwindow.cpp \
     src/ui/chat/delegates/ChatMessageDelegate.cpp \
     src/ui/contacts/delegates/ContactsDelegate.cpp
-
 HEADERS += \
+    src/encrypting/interfaces/CryptoErrorCode.h \
     src/encrypting/interfaces/ICryptoError.h \
+    src/encrypting/interfaces/IRatchetSession.h \
     src/encrypting/sodium/backends/SodiumCryptoBackend.h \
     src/encrypting/interfaces/ICryptoBackend.h \
     src/encrypting/interfaces/ICryptoKeyPair.h \
@@ -29,11 +40,23 @@ HEADERS += \
     src/encrypting/sodium/errors/SodiumCryptoError.h \
     src/encrypting/sodium/key_pairs/SodiumKeyPair.h \
     src/encrypting/sodium/sessions/SodiumSession.h \
+    src/encrypting/sodium/sessions/SodiumRatchetSession.h \
     src/models/ContactListModel.h \
     src/network/IPv6ChatClient.h \
     src/network/IPv6ChatServer.h \
+    src/network/PeerDiscovery.h \
     src/models/MessageListModel.h \
+    src/storage/MessageStore.h \
+    src/utils/ClockSync.h \
+    src/utils/FirewallHelper.h \
+    src/utils/KeyExchange.h \
+    src/utils/SafetyNumber.h \
+    src/protocol/Frame.h \
+    src/protocol/FrameReader.h \
+    src/protocol/HandshakeCodec.h \
+    src/utils/MessageType.h \
     src/utils/ProtocolUtils.h \
+    src/utils/ProtocolVersion.h \
     src/utils/Requests.h \
     src/utils/Structures.h \
     src/ui/main_window/mainwindow.h
@@ -44,7 +67,7 @@ FORMS += \
 TRANSLATIONS = \
     translations/en.ts \
     translations/ru.ts \
-    translations/sindarin.ts
+    translations/zh.ts
 
 win32 {
     OPENSSL_ROOT = C:/msys64/ucrt64
@@ -105,7 +128,6 @@ DISTFILES += \
     copy_dlls.bat \
     assets/images/app_icon.rc \
     assets/styles/mainwindow.qss \
-    assets/fonts/tngan.ttf \
     third_party_licenses/FontAwesome-LICENSE.md \
     third_party_licenses/Qt-LICENSE.md
 

@@ -2,13 +2,12 @@
     <qresource prefix="/">
         <file>translations/en.qm</file>
         <file>translations/ru.qm</file>
+        <file>translations/zh.qm</file>
         <file>assets/images/app_icon.ico</file>
         <file>assets/images/logo.png</file>
         <file>assets/styles/mainwindow.qss</file>
         <file>assets/certs/cacert.pem</file>
-        <file>assets/fonts/tngan.ttf</file>
-        <file>translations/sindarin.qm</file>
-        <file>assets/images/sindarin.png</file>
+        <file>assets/images/zh_flag.png</file>
         <file>assets/images/en_flag.png</file>
         <file>assets/images/ru_flag.png</file>
     </qresource>

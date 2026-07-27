@@ -6,8 +6,9 @@
 class SodiumCryptoError : public ICryptoError
 {
 public:
-    explicit SodiumCryptoError(const std::string& message)
-        : ICryptoError(message) {}
+    explicit SodiumCryptoError(const std::string& message,
+                                CryptoErrorCode code = CryptoErrorCode::Unknown)
+        : ICryptoError(message, code) {}
 
     QString message() const override {
         return QString::fromStdString(what());

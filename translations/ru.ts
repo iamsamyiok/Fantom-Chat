@@ -218,5 +218,63 @@ li.checked::marker { content: &quot;\2612&quot;; }
         <source>Copied to clipboard</source>
         <translation>Скопировано в буфер.</translation>
     </message>
+    <message>
+        <source>Show Safety Number...</source>
+        <translation>Показать код безопасности...</translation>
+    </message>
+    <message>
+        <source>Safety Number</source>
+        <translation>Код безопасности</translation>
+    </message>
+    <message>
+        <source>Safety Number is not available yet.
+
+Please establish an encrypted session with this peer first (complete a handshake).</source>
+        <translation>Код безопасности пока недоступен.
+
+Сначала установите зашифрованную сессию с этим пиром (завершите handshake).</translation>
+    </message>
+    <message>
+        <source>Failed to compute Safety Number.</source>
+        <translation>Не удалось вычислить код безопасности.</translation>
+    </message>
+    <message>
+        <source>Your Safety Number with this peer is:</source>
+        <translation>Ваш код безопасности с этим пиром:</translation>
+    </message>
+    <message>
+        <source>Your key fingerprint:</source>
+        <translation>Отпечаток вашего ключа:</translation>
+    </message>
+    <message>
+        <source>Peer key fingerprint:</source>
+        <translation>Отпечаток ключа пира:</translation>
+    </message>
+    <message>
+        <source>Verify...</source>
+        <translation>Проверить...</translation>
+    </message>
+    <message>
+        <source>Verify Safety Number</source>
+        <translation>Проверить код безопасности</translation>
+    </message>
+    <message>
+        <source>Enter the Safety Number as read out by the peer:</source>
+        <translation>Введите код безопасности, как его назвал пир:</translation>
+    </message>
+    <message>
+        <source>✅ Safety Numbers match.
+Your communication is end-to-end encrypted and not intercepted by a third party.</source>
+        <translation>✅ Коды безопасности совпадают.
+Ваше соединение зашифровано end-to-end и не перехвачено третьей стороной.</translation>
+    </message>
+    <message>
+        <source>⚠️ Safety Numbers do NOT match.
+Your communication may be intercepted.
+Please verify the channel you used to exchange Safety Numbers is trustworthy.</source>
+        <translation>⚠️ Коды безопасности НЕ совпадают.
+Ваше соединение может быть перехвачено.
+Проверьте, что канал, использованный для обмена кодами, заслуживает доверия.</translation>
+    </message>
 </context>
 </TS>

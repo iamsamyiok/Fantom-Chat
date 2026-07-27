@@ -2,6 +2,7 @@
 #include "../errors/SodiumCryptoError.h"
 #include "../key_pairs/SodiumKeyPair.h"
 #include "../sessions/SodiumSession.h"
+#include "../sessions/SodiumRatchetSession.h"
 
 ICryptoKeyPair* SodiumCryptoBackend::generateKeyPair()
 {
@@ -45,7 +46,8 @@ ICryptoSession* SodiumCryptoBackend::createSession(
                                                      reinterpret_cast<const unsigned char*>(peerPublicKey.constData()));
 
     if (result != 0){
-        throw SodiumCryptoError("Failed to derive session keys with crypto_kx_*_session_keys.");
+        throw SodiumCryptoError("Failed to derive session keys with crypto_kx_*_session_keys.",
+                                CryptoErrorCode::SessionKeyDerivationFailed);
     }
 
     return new SodiumSession(
@@ -56,4 +58,27 @@ ICryptoSession* SodiumCryptoBackend::createSession(
 
 std::shared_ptr<ICryptoBackend> SodiumCryptoBackend::clone() const {
     return std::make_shared<SodiumCryptoBackend>(*this);
+}
+
+// O16: 创建支持前向保密的 Ratchet 会话
+IRatchetSession* SodiumCryptoBackend::createRatchetSession(
+    const ICryptoKeyPair& selfKey, const QByteArray& peerPublicKey
+) {
+    // 用双方公钥做 SHA-256 派生初始 rootKey
+    // 这与 createSession 的"hash 双方公钥判定角色"思路一致
+    QByteArray selfHash = QCryptographicHash::hash(selfKey.publicKey(), QCryptographicHash::Sha256);
+    QByteArray peerHash = QCryptographicHash::hash(peerPublicKey, QCryptographicHash::Sha256);
+
+    // rootKey = SHA256(selfHash || peerHash)（顺序由字典序决定，保证双方一致）
+    QByteArray concat = (selfHash < peerHash)
+        ? (selfHash + peerHash)
+        : (peerHash + selfHash);
+    QByteArray rootKey = QCryptographicHash::hash(concat, QCryptographicHash::Sha256);
+
+    return new SodiumRatchetSession(
+        rootKey,
+        selfKey.privateKey(),
+        selfKey.publicKey(),
+        peerPublicKey
+    );
 }
