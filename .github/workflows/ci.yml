@@ -69,6 +69,7 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
+            mingw-w64-ucrt-x86_64-toolchain
             mingw-w64-ucrt-x86_64-qt6-base
             mingw-w64-ucrt-x86_64-libsodium
             mingw-w64-ucrt-x86_64-curl
@@ -90,7 +91,8 @@ jobs:
         run: |
           mkdir -p build
           cd build
-          qmake6.exe ../ipv6chat.pro
+          # 明确指定 mingw mkspec, 避免 qmake 选到 MSVC
+          qmake6.exe -spec win32-g++ ../ipv6chat.pro
           mingw32-make -j4
           # 复制运行时 DLL 到 build 目录
           cmd //c "..\\win32\\copy_dlls.bat ." || true
@@ -168,11 +170,12 @@ jobs:
   # ----------------------------------------------------------------
   # Release: 仅在 tag (v*) 推送时触发
   # 下载所有平台的构建产物, 创建 GitHub Release 并附加为 release assets
+  # 即使某个平台构建失败, 仍然发布已成功的产物 (用户至少能拿到主流平台二进制)
   # ----------------------------------------------------------------
   release:
     name: Publish Release
     needs: build-and-test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: always() && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -180,19 +183,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 下载所有平台构建产物
+      # 下载所有平台构建产物 (失败的 job 不会产生 artifact, 这里会优雅跳过)
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: false
+        continue-on-error: true
 
       # 汇总所有产物到 release-assets 目录, 并扁平化文件名
       - name: Collect release assets
         run: |
           mkdir -p release-assets
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
-          ls -la release-assets/
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" \) -exec cp {} release-assets/ \; 2>/dev/null || true
+          echo "--- Release assets collected: ---"
+          ls -la release-assets/ || echo "WARNING: No release assets found"
 
       # 生成 release notes
       - name: Generate release notes
