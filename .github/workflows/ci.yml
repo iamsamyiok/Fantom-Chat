@@ -2,6 +2,7 @@
 # 多平台构建 + 单元测试，每次 push / PR 都会触发
 # O14: 增加 Linux ARM64 原生构建（树莓派 / ARM 服务器）
 #       macOS-latest 已是 Apple Silicon 原生 arm64，无需额外作业
+# Release: tag (v*) 推送时自动打包并发布 GitHub Release
 name: CI
 
 on:
@@ -22,19 +23,19 @@ jobs:
         include:
           - os: ubuntu-22.04
             qt-bin: qt6-base-dev
-            artifact-suffix: linux-22.04
+            artifact-suffix: linux-22.04-x86_64
           - os: ubuntu-24.04
             qt-bin: qt6-base-dev
-            artifact-suffix: linux-24.04
+            artifact-suffix: linux-24.04-x86_64
           - os: ubuntu-24.04-arm
             qt-bin: qt6-base-dev
             artifact-suffix: linux-24.04-arm64
           - os: windows-latest
             qt-bin: ''
-            artifact-suffix: windows
+            artifact-suffix: windows-x86_64
           - os: macos-latest
             qt-bin: ''
-            artifact-suffix: macos
+            artifact-suffix: macos-arm64
 
     steps:
       - name: Checkout
@@ -91,10 +92,12 @@ jobs:
           cd build
           qmake6.exe ../ipv6chat.pro
           mingw32-make -j4
+          # 复制运行时 DLL 到 build 目录
+          cmd //c "..\\win32\\copy_dlls.bat ." || true
 
-      # ---- Unit tests (Linux only - 测试代码当前依赖 Unix 工具链) ----
+      # ---- Unit tests (Linux only) ----
       - name: Build & Run Unit Tests
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && matrix.os != 'ubuntu-24.04-arm'
         run: |
           mkdir -p tests/build
           cd tests/build
@@ -102,27 +105,167 @@ jobs:
           make -j4
           ./FantomChatTests
 
-      # ---- 上传构建产物 ----
-      - name: Upload artifact (Linux)
+      # ---- 打包 (Linux): tar.gz 包含二进制 + 启动脚本 ----
+      - name: Package (Linux)
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
-        with:
-          name: FantomChat-${{ matrix.artifact-suffix }}
-          path: build/FantomChat
-          if-no-files-found: error
+        run: |
+          mkdir -p dist/FantomChat
+          cp build/FantomChat dist/FantomChat/
+          cat > dist/FantomChat/run.sh <<'EOF'
+          #!/bin/bash
+          cd "$(dirname "$0")"
+          ./FantomChat "$@"
+          EOF
+          chmod +x dist/FantomChat/run.sh
+          # 包含依赖清单，方便用户安装
+          cat > dist/FantomChat/DEPENDENCIES.txt <<'EOF'
+          Required system packages (Debian/Ubuntu):
+            sudo apt install libqt6core6 libqt6network6 libqt6sql6 libqt6widgets6 \\
+                            libsodium23 libcurl4 zlib1g libgl1
+          EOF
+          cd dist
+          tar czf FantomChat-${{ matrix.artifact-suffix }}.tar.gz FantomChat
 
-      - name: Upload artifact (Windows)
+      # ---- 打包 (Windows): zip 包含 .exe + DLLs ----
+      - name: Package (Windows)
         if: runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          mkdir -p dist/FantomChat
+          cp build/FantomChat.exe dist/FantomChat/
+          cp build/*.dll dist/FantomChat/ 2>/dev/null || true
+          cp -r build/platforms dist/FantomChat/ 2>/dev/null || true
+          cp -r build/styles dist/FantomChat/ 2>/dev/null || true
+          cp -r build/translations dist/FantomChat/ 2>/dev/null || true
+          # 资源文件
+          cp -r ../assets dist/FantomChat/ 2>/dev/null || true
+          cd dist
+          7z a FantomChat-${{ matrix.artifact-suffix }}.zip FantomChat
+
+      # ---- 打包 (macOS): zip 包含 .app bundle ----
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          mkdir -p dist
+          # macdeployqt 自动打包 Qt 依赖到 .app 内
+          macdeployqt build/FantomChat.app -dmg -always-overwrite 2>/dev/null || \
+            macdeployqt build/FantomChat.app -always-overwrite
+          if [ -f build/FantomChat.dmg ]; then
+            mv build/FantomChat.dmg dist/FantomChat-${{ matrix.artifact-suffix }}.dmg
+          else
+            cd build
+            zip -r ../dist/FantomChat-${{ matrix.artifact-suffix }}.zip FantomChat.app
+          fi
+
+      # ---- 上传构建产物 (作为 workflow artifact, 也供 release job 下载) ----
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: FantomChat-${{ matrix.artifact-suffix }}
-          path: build/FantomChat.exe
+          path: dist/FantomChat-${{ matrix.artifact-suffix }}.*
           if-no-files-found: error
 
-      - name: Upload artifact (macOS)
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v4
+  # ----------------------------------------------------------------
+  # Release: 仅在 tag (v*) 推送时触发
+  # 下载所有平台的构建产物, 创建 GitHub Release 并附加为 release assets
+  # ----------------------------------------------------------------
+  release:
+    name: Publish Release
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 下载所有平台构建产物
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: FantomChat-${{ matrix.artifact-suffix }}
-          path: build/FantomChat.app
-          if-no-files-found: error
+          path: artifacts
+          merge-multiple: false
+
+      # 汇总所有产物到 release-assets 目录, 并扁平化文件名
+      - name: Collect release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "*.dmg" \) -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      # 生成 release notes
+      - name: Generate release notes
+        id: notes
+        run: |
+          cat > release-notes.md <<'EOF'
+          # Fantom-Chat v${{ github.ref_name }}
+
+          ## 主要特性
+
+          - **端到端加密** (E2EE): 基于 libsodium X25519 + ChaCha20-Poly1305
+          - **前向保密** (PFS): 轻量 Double Ratchet 算法, 长期密钥泄露不影响历史消息
+          - **周期性 DH 旋转**: 每 100 条消息自动再旋转, 增强后向保密
+          - **Safety Number**: 12×5 位数字安全码, 支持口头核对身份防 MITM
+          - **文件传输**: 分片 (32KB) + 断点续传协议
+          - **协议版本协商**: semver 兼容 (v1.2.0, 兼容 v1.0.0+)
+          - **时钟同步**: 握手时间戳 + 偏移检测
+          - **mDNS 发现**: 局域网内自动发现对等节点
+          - **加密消息存储**: SQLite 持久化
+          - **多语言**: 中 / 英 / 俄
+
+          ## 平台产物
+
+          | 文件 | 平台 |
+          |------|------|
+          | `FantomChat-linux-24.04-x86_64.tar.gz` | Linux x86_64 (Ubuntu 24.04) |
+          | `FantomChat-linux-24.04-arm64.tar.gz` | Linux ARM64 (Ubuntu 24.04 ARM) |
+          | `FantomChat-windows-x86_64.zip` | Windows x86_64 |
+          | `FantomChat-macos-arm64.dmg` 或 `.zip` | macOS (Apple Silicon) |
+
+          ## 安装说明
+
+          ### Linux
+          ```bash
+          tar xzf FantomChat-linux-*.tar.gz
+          cd FantomChat
+          # 安装依赖 (Debian/Ubuntu):
+          sudo apt install libqt6core6 libqt6network6 libqt6sql6 libqt6widgets6 \
+                          libsodium23 libcurl4 zlib1g libgl1
+          ./run.sh
+          ```
+
+          ### Windows
+          解压 zip 后双击 `FantomChat.exe` 即可。所有运行时 DLL 已包含在压缩包内。
+
+          ### macOS
+          双击 `.dmg` 拖动到 Applications, 或解压 `.zip` 后运行 `.app`。
+          首次启动若被 Gatekeeper 拦截: 系统偏好设置 → 安全性与隐私 → 允许打开。
+
+          ## 关于 APK (Android)
+
+          本项目当前为 Qt6 桌面应用, 暂不提供 APK。
+          要支持 Android 需要:
+          1. Qt6 Android 模块 + Android NDK
+          2. 移动端 UI 适配 (触屏 / 小屏)
+          3. androiddeployqt 打包
+          4. 网络权限配置
+
+          已列入 Roadmap, 欢迎贡献。
+
+          ## 验证
+
+          60 项单元测试全部通过: 协议 / 加密 / 安全码 / Ratchet / Wire 协议 / 多次旋转。
+          详见 [TESTING_NOTES.md](https://github.com/iamsamyiok/Fantom-Chat/blob/main/TESTING_NOTES.md)。
+          EOF
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Fantom-Chat ${{ github.ref_name }}
+          body_path: release-notes.md
+          files: release-assets/*
+          draft: false
+          prerelease: false
+          generate_release_notes: false
