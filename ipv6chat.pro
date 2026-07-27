@@ -87,7 +87,9 @@ win32 {
 
     # Connect Zlib
     INCLUDEPATH += $$ZLIB_ROOT/include
-    LIBS += $$ZLIB_ROOT/lib/libz.a
+    # 用 -lz 让链接器自动选择 libz.a (static) 或 libz.dll.a (import)
+    # 避免硬编码静态库路径在不同 MSYS2 版本下找不到文件
+    LIBS += -L$$ZLIB_ROOT/lib -lz
 
     # Connect libsodium
     INCLUDEPATH += $$SODIUM_ROOT/include
@@ -101,7 +103,8 @@ macx {
     LIBS += -lcurl
     # Connect Zlib
     INCLUDEPATH += $$ZLIB_ROOT/include
-    LIBS += $$ZLIB_ROOT/lib/libz.a
+    # 用 -lz 让链接器自动选择 libz.a (static) 或 libz.dylib (dynamic)
+    LIBS += -L$$ZLIB_ROOT/lib -lz
 
     # Connect libsodium
     INCLUDEPATH += $$SODIUM_ROOT/include
