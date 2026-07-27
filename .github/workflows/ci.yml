@@ -134,13 +134,23 @@ jobs:
         shell: msys2 {0}
         run: |
           mkdir -p dist/FantomChat
-          cp build/FantomChat.exe dist/FantomChat/
+          cp build/release/FantomChat.exe dist/FantomChat/ 2>/dev/null || cp build/FantomChat.exe dist/FantomChat/
+          # 复制 QMAKE_POST_LINK 拷贝过的 DLLs (若 copy_dlls.bat 成功)
+          cp build/release/*.dll dist/FantomChat/ 2>/dev/null || true
           cp build/*.dll dist/FantomChat/ 2>/dev/null || true
-          cp -r build/platforms dist/FantomChat/ 2>/dev/null || true
-          cp -r build/styles dist/FantomChat/ 2>/dev/null || true
-          cp -r build/translations dist/FantomChat/ 2>/dev/null || true
-          # 资源文件
+          # 兜底: 直接从 MSYS2 bin 目录拷贝运行时 DLL (防止 copy_dlls.bat 失败)
+          MSYS_BIN="C:/msys64/ucrt64/bin"
+          for dll in libcurl-4.dll libssl-3-x64.dll libcrypto-3-x64.dll libidn2-0.dll zlib1.dll libbrotlidec.dll libcares-2.dll libsodium-23.dll libsodium-18.dll; do
+            cp "$MSYS_BIN/$dll" dist/FantomChat/ 2>/dev/null || true
+          done
+          cp $MSYS_BIN/libsodium-*.dll dist/FantomChat/ 2>/dev/null || true
+          # Qt 插件
+          cp -r build/release/platforms dist/FantomChat/ 2>/dev/null || cp -r build/platforms dist/FantomChat/ 2>/dev/null || true
+          cp -r build/release/styles dist/FantomChat/ 2>/dev/null || cp -r build/styles dist/FantomChat/ 2>/dev/null || true
+          cp -r build/release/translations dist/FantomChat/ 2>/dev/null || cp -r build/translations dist/FantomChat/ 2>/dev/null || true
+          # 资源文件 + CA 证书
           cp -r ../assets dist/FantomChat/ 2>/dev/null || true
+          cp ../src/certs/cacert.pem dist/FantomChat/ 2>/dev/null || true
           cd dist
           7z a FantomChat-${{ matrix.artifact-suffix }}.zip FantomChat
 

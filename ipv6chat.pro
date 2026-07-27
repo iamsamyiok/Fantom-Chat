@@ -82,8 +82,13 @@ win32 {
     INCLUDEPATH += $$CURL_ROOT/include
     LIBS += -L$$CURL_ROOT/lib -lcurl -lws2_32 -lwsock32 -lcrypt32
     # set needed DLLs
+    # 注意: 不可用 cmd /c "script.bat" "arg" - cmd /c 在多引号场景下会吃掉首字符
+    # (例如 'opy_dlls.bat' is not recognized)
+    # 改用 call: cmd.exe 的 call 关键字没有这种引号剥离行为
+    # 同时附加 || exit /b 0, 让 copy_dlls.bat 失败不阻塞构建
+    # (CI 的 Package 步骤会再次复制 DLL, 所以这里失败也无碍)
     BAT_PATH = $$PWD/win32/copy_dlls.bat
-    QMAKE_POST_LINK += cmd /c \"$$BAT_PATH\" \"$$OUT_PWD\"
+    QMAKE_POST_LINK += call \"$$BAT_PATH\" \"$$OUT_PWD\" || exit /b 0
 
     # Connect Zlib
     INCLUDEPATH += $$ZLIB_ROOT/include
