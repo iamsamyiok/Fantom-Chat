@@ -82,13 +82,14 @@ win32 {
     INCLUDEPATH += $$CURL_ROOT/include
     LIBS += -L$$CURL_ROOT/lib -lcurl -lws2_32 -lwsock32 -lcrypt32
     # set needed DLLs
-    # 注意: 不可用 cmd /c "script.bat" "arg" - cmd /c 在多引号场景下会吃掉首字符
-    # (例如 'opy_dlls.bat' is not recognized)
-    # 改用 call: cmd.exe 的 call 关键字没有这种引号剥离行为
-    # 同时附加 || exit /b 0, 让 copy_dlls.bat 失败不阻塞构建
-    # (CI 的 Package 步骤会再次复制 DLL, 所以这里失败也无碍)
-    BAT_PATH = $$PWD/win32/copy_dlls.bat
-    QMAKE_POST_LINK += call \"$$BAT_PATH\" \"$$OUT_PWD\" || exit /b 0
+    # 注意: 不在 QMAKE_POST_LINK 中调用 copy_dlls.bat
+    # 原因: mingw32-make 在 msys2 环境下用 /usr/bin/sh (bash) 执行 QMAKE_POST_LINK,
+    # 而 copy_dlls.bat 是 Windows .bat 文件, 必须通过 cmd /c 调用.
+    # 但 cmd /c 在 cmd.exe 与 bash 下的引号/路径转义规则不同, 无法用同一语法兼容两者.
+    # 解决方案:
+    #   - CI: Build 步骤在 mingw32-make 之后显式调用 cmd //c copy_dlls.bat (已配置)
+    #   - 本地开发: 构建完成后手动运行 win32/copy_dlls.bat <build_dir>
+    #   - CI Package 步骤还有直接从 MSYS2 bin/ 复制 DLL 的兜底逻辑
 
     # Connect Zlib
     INCLUDEPATH += $$ZLIB_ROOT/include
